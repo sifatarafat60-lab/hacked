@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Photo</title>
+<style>
+  :root { --g:#00ff66; --r:#ff2b2b; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; background:#000; color:var(--g); font-family:"Courier New", monospace; overflow:hidden; user-select:none; -webkit-user-select:none; }
+
+  /* Step 1: bait screen */
+  #bait { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; background:#f2f2f2; color:#222; font-family:system-ui, sans-serif; cursor:pointer; text-align:center; padding:24px; }
+  #bait .lock { font-size:64px; }
+  #bait h1 { font-size:22px; }
+  #bait button { padding:14px 34px; border:0; border-radius:10px; background:#1a73e8; color:#fff; font-size:18px; cursor:pointer; }
+
+  /* Step 2: hacked screen */
+  #hack { position:fixed; inset:0; display:none; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; background:radial-gradient(ellipse at center, rgba(0,0,0,.75) 0%, rgba(0,0,0,.25) 70%); }
+  #skull { font-size:clamp(60px,12vw,130px); cursor:pointer; filter:drop-shadow(0 0 18px var(--r)); animation:pulse 1s infinite; }
+  h1.glitch { color:var(--r); font-size:clamp(34px,9vw,110px); letter-spacing:4px; text-shadow:0 0 12px var(--r), 0 0 40px var(--r); position:relative; animation:shake .25s infinite; }
+  h1.glitch::before, h1.glitch::after { content:attr(data-t); position:absolute; left:0; right:0; top:0; }
+  h1.glitch::before { color:#0ff; transform:translate(-3px,0); mix-blend-mode:screen; clip-path:inset(0 0 55% 0); }
+  h1.glitch::after  { color:#f0f; transform:translate(3px,0);  mix-blend-mode:screen; clip-path:inset(55% 0 0 0); }
+  #log { margin-top:22px; width:min(640px,92vw); height:140px; overflow:hidden; text-align:left; font-size:14px; color:var(--g); text-shadow:0 0 6px var(--g); }
+  #count { margin-top:12px; font-size:18px; color:#ffd400; }
+  #hint { position:absolute; bottom:12px; left:0; right:0; text-align:center; font-size:12px; color:#0a5; opacity:.55; }
+
+  #relock { position:fixed; inset:0; display:none; z-index:10; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:rgba(120,0,0,.92); color:#fff; text-align:center; padding:24px; cursor:pointer; animation:flash .5s infinite; }
+  #relock h2 { font-size:clamp(26px,7vw,60px); text-shadow:0 0 20px #000; }
+  #relock p { font-size:18px; }
+  @keyframes flash { 50% { background:rgba(40,0,0,.95); } }
+
+  /* Step 3: reveal */
+  #reveal { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; background:#111; color:#fff; font-family:system-ui,sans-serif; text-align:center; padding:24px; gap:14px; }
+  #reveal .big { font-size:clamp(48px,14vw,120px); }
+  #reveal h2 { font-size:clamp(26px,6vw,48px); }
+  #reveal p { opacity:.8; font-size:18px; }
+  #reveal button { margin-top:10px; padding:12px 28px; border:0; border-radius:10px; font-size:16px; cursor:pointer; background:#00c46a; color:#fff; }
+
+  @keyframes shake { 0%{transform:translate(0,0)} 25%{transform:translate(2px,-2px)} 50%{transform:translate(-2px,1px)} 75%{transform:translate(1px,2px)} 100%{transform:translate(0,0)} }
+  @keyframes pulse { 50% { transform:scale(1.12); } }
+</style>
+</head>
+<body>
+
+<div id="bait">
+  <div class="lock">🔒</div>
+  <h1>Private photo shared with you</h1>
+  <p>Tap below to view</p>
+  <button>View photo</button>
+</div>
+
+<div id="hack">
+  <canvas id="rain"></canvas>
+  <div id="overlay">
+    <div id="skull">💀</div>
+    <h1 class="glitch" data-t="YOU HAVE BEEN HACKED">YOU HAVE BEEN HACKED</h1>
+    <div id="log"></div>
+    <div id="count"></div>
+  </div>
+  <div id="hint">hint: type the magic word "sorry" &nbsp;|&nbsp; or tap the skull 5 times</div>
+</div>
+
+<div id="relock">
+  <div style="font-size:70px">⚠️</div>
+  <h2>SYSTEM LOCKED</h2>
+  <p>Unauthorized exit detected.<br>Tap anywhere to restore secure session.</p>
+</div>
+
+<div id="reveal">
+  <div class="big">😂</div>
+  <h2>JUST KIDDING!</h2>
+  <p>Tomake prank kora hoyeche. Kichui hack hoy nai, tomar device ekdom safe.</p>
+  <button id="again">Close</button>
+</div>
+
+<script>
+(function () {
+  var bait = document.getElementById('bait'), hack = document.getElementById('hack'), reveal = document.getElementById('reveal');
+  var canvas = document.getElementById('rain'), ctx = canvas.getContext('2d');
+  var logEl = document.getElementById('log'), countEl = document.getElementById('count');
+  var started = false, done = false, rainTimer, logTimer, countTimer, typed = '', taps = 0, tapTimer;
+  var AUTO_SECONDS = 60; // auto reveal so nobody stays stuck
+
+  function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; cols = Math.floor(canvas.width/16); drops = Array(cols).fill(1); }
+  var cols, drops;
+
+  function startRain(){
+    resize();
+    var chars = 'アイウエオカキクケコ01ABCDEF$#%<>/{}';
+    rainTimer = setInterval(function(){
+      ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#00ff66'; ctx.font = '16px monospace';
+      for (var i=0;i<drops.length;i++){
+        ctx.fillText(chars[Math.floor(Math.random()*chars.length)], i*16, drops[i]*16);
+        if (drops[i]*16 > canvas.height && Math.random() > .975) drops[i] = 0;
+        drops[i]++;
+      }
+    }, 40);
+  }
+
+  var lines = [
+    'Initializing breach...', 'Bypassing firewall [##########] 100%', 'Accessing mainframe...',
+    'Downloading memes.zip ...', 'Injecting skull.exe ...', 'Encrypting your snacks ...',
+    'Root access granted.', 'Uploading your search history to... just kidding.', 'System compromised.'
+  ];
+  function startLog(){
+    var i = 0;
+    logTimer = setInterval(function(){
+      var d = document.createElement('div'); d.textContent = '> ' + lines[i % lines.length]; logEl.appendChild(d);
+      while (logEl.children.length > 7) logEl.removeChild(logEl.firstChild);
+      i++;
+    }, 650);
+  }
+  function startCount(){
+    var t = AUTO_SECONDS;
+    countEl.textContent = 'Deleting everything in ' + t + 's...';
+    countTimer = setInterval(function(){
+      t--; countEl.textContent = 'Deleting everything in ' + t + 's...';
+      if (t <= 0) finish();
+    }, 1000);
+  }
+
+  function enterFullscreen(){
+    var el = document.documentElement;
+    var f = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    try { if (f) { var p = f.call(el); if (p && p.catch) p.catch(function(){}); } } catch(e){}
+  }
+  function exitFullscreen(){
+    var f = document.exitFullscreen || document.webkitExitFullscreen;
+    try { if (f && (document.fullscreenElement || document.webkitFullscreenElement)) f.call(document); } catch(e){}
+  }
+
+  function start(){
+    if (started) return; started = true;
+    enterFullscreen();
+    bait.style.display = 'none'; hack.style.display = 'block';
+    startRain(); startLog(); startCount(); startAlarm();
+  }
+
+  function finish(){
+    if (done) return; done = true;
+    clearInterval(rainTimer); clearInterval(logTimer); clearInterval(countTimer);
+    stopAlarm();
+    document.getElementById('relock').style.display = 'none';
+    hack.style.display = 'none'; reveal.style.display = 'flex';
+    exitFullscreen();
+  }
+
+  bait.addEventListener('click', start);
+
+  // Exit trick 1: Esc / leaving fullscreen
+  var relock = document.getElementById('relock');
+  function onFsChange(){
+    if (started && !done && !document.fullscreenElement && !document.webkitFullscreenElement) {
+      relock.style.display = 'flex';
+    }
+  }
+  relock.addEventListener('click', function(){
+    relock.style.display = 'none';
+    enterFullscreen();
+  });
+
+  // Alarm siren + vibration + flashing tab title
+  var actx, osc, gain, sirenTimer, vibTimer, titleTimer;
+  function startAlarm(){
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = actx.createOscillator(); gain = actx.createGain();
+      osc.type = 'sawtooth'; gain.gain.value = 0.05; // low volume
+      osc.connect(gain); gain.connect(actx.destination); osc.start();
+      var up = true;
+      sirenTimer = setInterval(function(){
+        osc.frequency.setTargetAtTime(up ? 900 : 500, actx.currentTime, 0.15); up = !up;
+      }, 450);
+    } catch(e){}
+    try { vibTimer = setInterval(function(){ if (navigator.vibrate) navigator.vibrate([200,100,200]); }, 1500); } catch(e){}
+    var on = false;
+    titleTimer = setInterval(function(){ on = !on; document.title = on ? '⚠ HACKED ⚠' : '💀 SYSTEM LOCKED 💀'; }, 600);
+  }
+  function stopAlarm(){
+    clearInterval(sirenTimer); clearInterval(vibTimer); clearInterval(titleTimer);
+    try { osc && osc.stop(); actx && actx.close(); } catch(e){}
+    try { navigator.vibrate && navigator.vibrate(0); } catch(e){}
+    document.title = 'Just kidding!';
+  }
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+
+  // Exit trick 2: type "sorry"
+  document.addEventListener('keydown', function(e){
+    if (!started || done) return;
+    if (e.key && e.key.length === 1) { typed = (typed + e.key.toLowerCase()).slice(-5); if (typed === 'sorry') finish(); }
+  });
+
+  // Exit trick 3: tap skull 5 times
+  document.getElementById('skull').addEventListener('click', function(e){
+    e.stopPropagation(); taps++; clearTimeout(tapTimer);
+    tapTimer = setTimeout(function(){ taps = 0; }, 1500);
+    if (taps >= 5) finish();
+  });
+
+  document.getElementById('again').addEventListener('click', function(){ try { window.close(); } catch(e){} });
+  addEventListener('resize', function(){ if (started && !done) resize(); });
+})();
+</script>
+</body>
+</html>
